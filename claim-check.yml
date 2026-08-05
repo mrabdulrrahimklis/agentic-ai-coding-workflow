@@ -1,0 +1,74 @@
+name: claim-check
+
+on:
+  pull_request:
+    paths: ["content/**/*.md", "examples/**/*.md"]
+  workflow_dispatch:
+
+jobs:
+  verify-claims:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+
+      - run: npm ci && npm run build
+
+      # Python is here so exec-method claims with python snippets don't come
+      # back "unverifiable: no runtime" on the runner.
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: Run pipeline on changed posts
+        id: check
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -o pipefail
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.md' | grep -v '\.annotated\.md$' || true)
+          if [ -z "$FILES" ]; then echo "no markdown changed"; exit 0; fi
+          STATUS=0
+          for f in $FILES; do
+            echo "::group::$f"
+            node dist/cli.js "$f" || STATUS=$?
+            echo "::endgroup::"
+          done
+          exit $STATUS
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claim-check-report
+          path: |
+            claim-check-report.md
+            claim-check-report.json
+            claims.json
+            verdicts.json
+          if-no-files-found: ignore
+
+      - name: Comment report on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('claim-check-report.md')) return;
+            const body = fs.readFileSync('claim-check-report.md', 'utf8').slice(0, 65000);
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number,
+            });
+            const prev = comments.find(c => c.body.startsWith('# claim-check'));
+            if (prev) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: prev.id, body });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number: context.issue.number, body,
+              });
+            }

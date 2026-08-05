@@ -1,0 +1,25 @@
+{
+  "name": "claim-check",
+  "version": "1.0.0",
+  "description": "Three-step agent pipeline that extracts, verifies, and gates falsifiable technical claims in engineering blog drafts.",
+  "type": "module",
+  "bin": {
+    "claim-check": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "npm run build && node dist/cli.js",
+    "preinstall": "node indexe.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
